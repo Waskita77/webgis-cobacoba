@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebGIS untuk Kesehatan</title>
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+            background-color: #f4f5f7;
+            display: flex;
+            flex-direction: column;
+            height: 95vh;
+        }
+
+        /* Header sesuai mockup */
+        header {
+            text-align: center;
+            border: 2px solid black;
+            border-radius: 10px;
+            padding: 15px;
+            margin: 0 auto 20px auto;
+            width: fit-content;
+            background-color: white;
+            font-weight: bold;
+            font-size: 1.5rem;
+            text-transform: uppercase;
+        }
+
+        /* Container Peta dan Legenda */
+        .container {
+            display: flex;
+            flex: 1;
+            gap: 20px;
+        }
+
+        /* Muka Peta */
+        #map {
+            flex: 3;
+            background-color: white;
+            border: 1px solid #ccc;
+            position: relative;
+        }
+
+        /* Legenda sesuai mockup */
+        #legend {
+            flex: 1;
+            background-color: white;
+            border-top: 4px solid black;
+            border-bottom: 4px solid black;
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        #legend h3 {
+            margin-top: 0;
+        }
+
+        #legend ul {
+            list-style-type: none;
+            padding-left: 0;
+        }
+
+        #legend li {
+            margin-bottom: 8px;
+            font-size: 0.9rem;
+        }
+
+        /* Styling Tombol Kontrol Kiri Bawah */
+        .btn-control {
+            padding: 10px 15px;
+            background-color: white;
+            border: 2px solid black;
+            border-radius: 5px;
+            font-weight: bold;
+            cursor: pointer;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            transition: 0.3s;
+            margin-top: 5px;
+            display: block;
+            width: 100%;
+            text-align: left;
+        }
+
+        .btn-control:hover {
+            background-color: #f0f0f0;
+        }
+
+        .btn-control.active {
+            background-color: #ffcccc;
+            border-color: red;
+            color: red;
+        }
+        
+        .btn-gps {
+            border-color: #007bff;
+            color: #007bff;
+        }
+
+        .btn-gps:hover {
+            background-color: #e6f2ff;
+        }
+
+        /* Styling Tombol Google Maps Kanan Bawah */
+        .btn-gmaps {
+            padding: 12px 15px;
+            background-color: #34a853; /* Warna hijau khas Google */
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            font-weight: bold;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+            display: none; /* Disembunyikan secara default */
+            font-size: 0.9rem;
+            transition: 0.3s;
+            text-align: center;
+            border: 2px solid #2c8f46;
+        }
+
+        .btn-gmaps:hover {
+            background-color: #2c8f46;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+
+    <header>WebGIS Untuk Kesehatan</header>
+
+    <div class="container">
+        <div id="map"></div>
+        <div id="legend">
+            <h3>Legenda</h3>
+            <ul id="faskes-list"></ul>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
+    <script>
+        // 1. Data Fasilitas Kesehatan
+        const faskesList = [
+            { name: "RS Ludira Husada Tama", lat: -7.7924902, lng: 110.3529661 },
+            { name: "RS Bethesda", lat: -7.783183, lng: 110.3777776 },
+            { name: "RS Panti Rapih", lat: -7.7772269, lng: 110.3760914 },
+            { name: "RS Bethesda Lempuyangan", lat: -7.7968089, lng: 110.3730405 },
+            { name: "RSU PKU Muhammadiyah", lat: -7.8011933, lng: 110.3622428 },
+            { name: "RSUD Kota Yogyakarta", lat: -7.8251827, lng: 110.377977 },
+            { name: "RSI Hidayatullah", lat: -7.8153508, lng: 110.3877743 },
+            { name: "RSKIA PKU Muhammadiyah Kotagede", lat: -7.8228552, lng: 110.4007544 },
+            { name: "RS Siloam Yogyakarta", lat: -7.7834618, lng: 110.3907675 },
+            { name: "RS Happy Land", lat: -7.7940429, lng: 110.3918092 },
+            { name: "RS Pratama", lat: -7.8156616, lng: 110.3739253 }
+        ];
+
+        // 2. Inisialisasi Peta
+        const map = L.map('map').setView([-7.8014, 110.3644], 13);
+
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap contributors'
+        }).addTo(map);
+
+        // 3. Tambahkan Marker Faskes & Isi Legenda
+        const legendContainer = document.getElementById('faskes-list');
+        
+        faskesList.forEach(faskes => {
+            L.marker([faskes.lat, faskes.lng])
+             .bindPopup(`<b>${faskes.name}</b>`)
+             .addTo(map);
+
+            const li = document.createElement('li');
+            li.innerHTML = `🏥 ${faskes.name}`;
+            legendContainer.appendChild(li);
+        });
+
+        let isAddingIncident = false;
+        let incidentMarker = null;
+        let routeLayer = null;
+
+        // 4. Panel Kontrol Kiri Bawah (Manual & GPS)
+        const ControlPanel = L.Control.extend({
+            options: { position: 'bottomleft' },
+            onAdd: function () {
+                const container = L.DomUtil.create('div');
+
+                const btnManual = L.DomUtil.create('button', 'btn-control', container);
+                btnManual.innerHTML = '📍 Tambah Titik (Manual)';
+                btnManual.onclick = function (e) {
+                    L.DomEvent.stopPropagation(e);
+                    isAddingIncident = !isAddingIncident;
+                    if (isAddingIncident) {
+                        btnManual.classList.add('active');
+                        document.getElementById('map').style.cursor = 'crosshair';
+                    } else {
+                        btnManual.classList.remove('active');
+                        document.getElementById('map').style.cursor = '';
+                    }
+                };
+
+                const btnGPS = L.DomUtil.create('button', 'btn-control btn-gps', container);
+                btnGPS.innerHTML = '📡 Gunakan GPS Saya';
+                btnGPS.onclick = function (e) {
+                    L.DomEvent.stopPropagation(e);
+                    
+                    isAddingIncident = false;
+                    btnManual.classList.remove('active');
+                    document.getElementById('map').style.cursor = '';
+
+                    if (!navigator.geolocation) {
+                        alert("Geolokasi tidak didukung oleh browser/perangkat Anda.");
+                        return;
+                    }
+
+                    btnGPS.innerHTML = '⏳ Mencari lokasi...';
+                    
+                    navigator.geolocation.getCurrentPosition(
+                        (position) => {
+                            btnGPS.innerHTML = '📡 Gunakan GPS Saya';
+                            const userLat = position.coords.latitude;
+                            const userLng = position.coords.longitude;
+                            
+                            map.setView([userLat, userLng], 15);
+                            hitungRuteTerdekat(userLat, userLng);
+                        },
+                        (error) => {
+                            btnGPS.innerHTML = '📡 Gunakan GPS Saya';
+                            alert("Gagal mendapatkan lokasi. Pastikan izin GPS aktif. Pesan: " + error.message);
+                        },
+                        { enableHighAccuracy: true }
+                    );
+                };
+
+                return container;
+            }
+        });
+        map.addControl(new ControlPanel());
+
+        // 5. Panel Kontrol Kanan Bawah (Tombol Buka Google Maps)
+        const GmapsControl = L.Control.extend({
+            options: { position: 'bottomright' },
+            onAdd: function () {
+                const container = L.DomUtil.create('div');
+                container.innerHTML = '<a id="btn-gmaps" class="btn-gmaps" target="_blank" href="#">🗺️ Buka di Google Maps</a>';
+                return container;
+            }
+        });
+        map.addControl(new GmapsControl());
+
+        // 6. Interaksi Klik Peta (Mode Manual)
+        map.on('click', function(e) {
+            if (!isAddingIncident) return; 
+
+            isAddingIncident = false;
+            document.querySelector('.btn-control').classList.remove('active');
+            document.getElementById('map').style.cursor = '';
+
+            hitungRuteTerdekat(e.latlng.lat, e.latlng.lng);
+        });
+
+        // 7. Fungsi Menghitung Rute OSRM
+        async function hitungRuteTerdekat(userLat, userLng) {
+            // Sembunyikan tombol Gmaps saat menghitung ulang
+            document.getElementById('btn-gmaps').style.display = 'none';
+
+            if (incidentMarker) map.removeLayer(incidentMarker);
+            if (routeLayer) map.removeLayer(routeLayer);
+
+            incidentMarker = L.circleMarker([userLat, userLng], {
+                color: 'red',
+                radius: 8,
+                fillOpacity: 1
+            }).addTo(map).bindPopup("<b>Lokasi Kejadian</b>").openPopup();
+
+            let coordinatesString = `${userLng},${userLat}`;
+            faskesList.forEach(f => {
+                coordinatesString += `;${f.lng},${f.lat}`;
+            });
+
+            const tableUrl = `https://router.project-osrm.org/table/v1/driving/${coordinatesString}?sources=0`;
+
+            try {
+                const response = await fetch(tableUrl);
+                const data = await response.json();
+
+                if (data.code !== 'Ok') throw new Error("Gagal mengambil data dari OSRM");
+
+                const durations = data.durations[0]; 
+                let minTime = Infinity;
+                let nearestFaskesIndex = -1;
+
+                for (let i = 1; i < durations.length; i++) {
+                    if (durations[i] < minTime) {
+                        minTime = durations[i];
+                        nearestFaskesIndex = i - 1; 
+                    }
+                }
+
+                const maxTimeSeconds = 8 * 60;
+                const timeInMinutes = Math.ceil(minTime / 60);
+
+                if (minTime <= maxTimeSeconds) {
+                    const nearestFaskes = faskesList[nearestFaskesIndex];
+                    
+                    const routeUrl = `https://router.project-osrm.org/route/v1/driving/${userLng},${userLat};${nearestFaskes.lng},${nearestFaskes.lat}?overview=full&geometries=geojson`;
+                    const routeResponse = await fetch(routeUrl);
+                    const routeData = await routeResponse.json();
+
+                    if (routeData.code === 'Ok') {
+                        const routeGeoJSON = routeData.routes[0].geometry;
+                        routeLayer = L.geoJSON(routeGeoJSON, {
+                            style: { color: 'blue', weight: 5, opacity: 0.7 }
+                        }).addTo(map);
+
+                        // Update URL dan tampilkan tombol Google Maps
+                        const gmapsBtn = document.getElementById('btn-gmaps');
+                        // Format URL rute Gmaps (origin -> destination)
+                        gmapsBtn.href = `https://www.google.com/maps/dir/?api=1&origin=${userLat},${userLng}&destination=${nearestFaskes.lat},${nearestFaskes.lng}&travelmode=driving`;
+                        gmapsBtn.style.display = 'block';
+
+                        alert(`✅ Faskes terdekat: ${nearestFaskes.name}\nEstimasi waktu: ${timeInMinutes} menit.`);
+                    }
+                } else {
+                    alert(`❌ Tidak ada Faskes dalam jangkauan 8 menit.\nFaskes terdekat berjarak ${timeInMinutes} menit perjalanan.`);
+                }
+            } catch (error) {
+                console.error(error);
+                alert("Terjadi kesalahan saat menghitung rute OSRM.");
+            }
+        }
+    </script>
+</body>
+</html>
